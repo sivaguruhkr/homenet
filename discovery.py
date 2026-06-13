@@ -139,6 +139,44 @@ def reverse_dns(ip):
         return None
 
 
+def netbios_name(ip, timeout=0.6):
+    """Ask a host for its name via a NetBIOS node-status query (UDP 137).
+
+    Windows PCs, Samba/NAS boxes and many devices answer with their computer
+    name even when they publish no mDNS and have no reverse-DNS record. Returns
+    the first unique workstation name, or None.
+    """
+    # NBNS node-status request for the wildcard name "*"
+    header = b"\xca\xfe\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+    enc_name = b"CK" + b"AA" * 15           # "*" + 15 NULs, half-ASCII encoded
+    question = bytes([0x20]) + enc_name + b"\x00" + b"\x00\x21" + b"\x00\x01"
+    pkt = header + question
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(timeout)
+    try:
+        sock.sendto(pkt, (ip, 137))
+        data, _ = sock.recvfrom(1024)
+    except Exception:
+        return None
+    finally:
+        sock.close()
+    try:
+        num = data[56]                       # RDATA: number-of-names byte
+        off = 57
+        for _ in range(num):
+            name = data[off:off + 15].decode("ascii", "ignore").rstrip()
+            suffix = data[off + 15]
+            flags = (data[off + 16] << 8) | data[off + 17]
+            off += 18
+            is_group = bool(flags & 0x8000)
+            if name and not is_group and suffix in (0x00, 0x20) \
+                    and name != "__MSBROWSE__":
+                return name
+    except Exception:
+        return None
+    return None
+
+
 def fingerprint(ip, ports=None, timeout=0.4):
     """Light TCP connect scan -> list of open service names."""
     found = []
@@ -335,7 +373,7 @@ class DeviceTracker:
             if not ip or dev.get("last_seen", 0) < now - ONLINE_WINDOW:
                 continue
             if not dev.get("hostname"):
-                dev["hostname"] = reverse_dns(ip)
+                dev["hostname"] = reverse_dns(ip) or netbios_name(ip)
             mname, mtypes = self.mdns.for_ip(ip)
             if mname:
                 dev["name"] = mname
