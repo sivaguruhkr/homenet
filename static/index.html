@@ -45,6 +45,7 @@
   table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
   th{text-align:left;color:var(--muted);font-weight:500;font-size:10px;letter-spacing:.06em;text-transform:uppercase;padding:7px 8px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface);cursor:pointer;user-select:none}
   th.num,td.num{text-align:right;font-variant-numeric:tabular-nums}
+  td.mono{color:var(--muted);letter-spacing:.02em;white-space:nowrap}
   td{padding:7px 8px;border-bottom:1px solid rgba(34,43,57,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px}
   tbody tr{cursor:pointer} tr:hover td{background:var(--raised)}
   .scrollable{max-height:460px;overflow:auto}
@@ -132,7 +133,7 @@
   <div class="scrollable">
     <table id="devTable"><thead><tr>
       <th data-k="online">●</th><th data-k="display_name">device</th><th data-k="ip">ip</th>
-      <th data-k="kind">type</th><th data-k="vendor">vendor</th>
+      <th data-k="kind">type</th><th data-k="vendor">vendor</th><th data-k="mac">mac</th>
       <th class="num" data-k="rx_bps">↓ rate</th><th class="num" data-k="tx_bps">↑ rate</th>
       <th>flow</th><th>protocols</th><th class="num" data-k="last_seen_ago">last seen</th>
     </tr></thead><tbody id="devBody"></tbody></table>
@@ -303,6 +304,7 @@ function render(s){
     <td><span class="status ${d.online?'on':'off'}"></span></td>
     <td><div class="dev"><span class="ico">${icon(d.kind)}</span><div><div class="nm" title="${esc(d.display_name)}">${esc(d.display_name)}</div><div class="kd">${esc(d.hostname||"")}</div></div></div></td>
     <td>${esc(d.ip)}</td><td>${esc(d.kind||"–")}</td><td>${esc(d.vendor||"–")}</td>
+    <td class="mono">${esc(d.mac||"–")}${d.random_mac?' <span class="chip" title="randomized / private MAC">rnd</span>':''}</td>
     <td class="num rx-c">${d.rx_bps?rate(d.rx_bps):'<span class="muted">–</span>'}</td>
     <td class="num tx-c">${d.tx_bps?rate(d.tx_bps):'<span class="muted">–</span>'}</td>
     <td><canvas class="spark" width="64" height="20"></canvas></td>
