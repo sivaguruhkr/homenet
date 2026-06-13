@@ -94,8 +94,12 @@ _latest = {}
 
 
 def host_facts():
+    run_elevated = "py app.py (as Administrator)" if sysutil.IS_WINDOWS else "sudo python app.py"
     return {"hostname": socket.gethostname(), "is_root": IS_ROOT,
-            "platform": sys.platform, "cpu_percent": psutil.cpu_percent(interval=None)}
+            "platform": sys.platform, "cpu_percent": psutil.cpu_percent(interval=None),
+            "is_windows": sysutil.IS_WINDOWS,
+            "elevate_hint": sysutil.admin_hint(),
+            "run_elevated": run_elevated}
 
 
 def sampler_loop():

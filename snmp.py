@@ -52,7 +52,13 @@ class SNMPPoller:
         if not self.enabled:
             return "disabled"
         if not self.have_tools:
-            return "net-snmp tools not installed (brew install net-snmp)"
+            if sysutil.IS_WINDOWS:
+                hint = "install Net-SNMP and add it to PATH"
+            elif sysutil.IS_MACOS:
+                hint = "brew install net-snmp"
+            else:
+                hint = "apt install snmp"
+            return f"net-snmp tools not installed ({hint})"
         if not self.host:
             return "no host configured"
         return "active"

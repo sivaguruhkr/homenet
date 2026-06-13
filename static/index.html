@@ -122,7 +122,7 @@
   <div class="stat"><div class="lbl">Seen on wire</div><div class="val" id="onwire">0<small> cap</small></div></div>
   <div class="stat"><div class="lbl">Blocked domains</div><div class="val" id="blkCount">0</div></div>
   <div class="stat"><div class="lbl">Alerts</div><div class="val" id="alCount">0</div></div>
-  <div class="stat scope"><div class="lbl">This Mac · ↓ / ↑</div><div class="scopewrap"><canvas id="scope"></canvas></div></div>
+  <div class="stat scope"><div class="lbl">This host · ↓ / ↑</div><div class="scopewrap"><canvas id="scope"></canvas></div></div>
 </div>
 
 <div class="panel">
@@ -163,12 +163,12 @@
         <button class="act" id="blkAdd">block</button></div>
     </div>
     <div>
-      <h2 style="margin:0 0 8px">IP blocking · pf <span class="count" id="pfState"></span></h2>
+      <h2 style="margin:0 0 8px">IP blocking · <span id="fwBackend">firewall</span> <span class="count" id="pfState"></span></h2>
       <div id="pfNote"></div>
       <div id="blkIps"></div>
       <div class="addbox"><input id="ipInput" placeholder="IP or CIDR to block"/>
         <button class="act" id="ipAdd">block</button>
-        <button class="act" id="pfFlush" title="remove all HomeScope pf rules">flush</button></div>
+        <button class="act" id="pfFlush" title="remove all HomeScope firewall rules">flush</button></div>
     </div>
   </div>
 </div>
@@ -229,7 +229,7 @@ document.getElementById('rescan').onclick=()=>fetch('/api/rescan',{method:'POST'
 document.getElementById('exportBtn').onclick=()=>document.getElementById('exportDd').classList.toggle('open');
 document.getElementById('blkAdd').onclick=async()=>{const v=document.getElementById('blkInput').value.trim();if(v){await post('/api/block/domain',{domain:v});document.getElementById('blkInput').value='';}};
 document.getElementById('ipAdd').onclick=async()=>{const v=document.getElementById('ipInput').value.trim();if(v){const r=await post('/api/block/ip',{ip:v});if(!r.ok)alert('Block failed: '+(r.error||'firewall disabled — enable it in config.json'));document.getElementById('ipInput').value='';}};
-document.getElementById('pfFlush').onclick=async()=>{if(confirm('Remove ALL HomeScope pf rules?'))await post('/api/firewall/flush',{});};
+document.getElementById('pfFlush').onclick=async()=>{if(confirm('Remove ALL HomeScope firewall rules?'))await post('/api/firewall/flush',{});};
 document.getElementById('thrSet').onclick=async()=>{const v=parseFloat(document.getElementById('thrInput').value);if(!isNaN(v))await post('/api/alerts/threshold',{kbps:v});};
 
 // device drawer
@@ -270,10 +270,12 @@ function renderDrawer(d){
 function render(s){
   if(!s||s.error)return;last=s;
   const h=s.host||{},cap=s.capabilities||{};
-  document.getElementById('hostline').textContent=`${h.hostname||"?"} · ${h.is_root?"root":"user"} · CPU ${Math.round(h.cpu_percent||0)}%`;
+  const runElevated=h.run_elevated||"sudo python app.py";   // OS-aware elevate command
+  const adminWord=h.is_root?(h.is_windows?"admin":"root"):"user";
+  document.getElementById('hostline').textContent=`${h.hostname||"?"} · ${adminWord} · CPU ${Math.round(h.cpu_percent||0)}%`;
   document.getElementById('caps').innerHTML=[
     ["cap",cap.capture],["dns",cap.dns],["mdns",cap.mdns],
-    ["sinkhole",cap.sinkhole==="active"],["pf",cap.firewall],["snmp",cap.snmp==="active"]
+    ["sinkhole",cap.sinkhole==="active"],["fw",cap.firewall],["snmp",cap.snmp==="active"]
   ].map(([n,on])=>`<span class="pill ${on?'on':'off'}"><span class="dot"></span>${n}</span>`).join("");
 
   const dv=s.devices||{},tr=s.traffic||{};
@@ -288,7 +290,7 @@ function render(s){
   scope.data.labels=tl.map(p=>p.t);scope.data.datasets[0].data=tl.map(p=>p.rx);scope.data.datasets[1].data=tl.map(p=>p.tx);scope.update('none');
 
   document.getElementById('capState').textContent=cap.capture?"live traffic":"identity only";
-  document.getElementById('capNote').innerHTML=cap.capture?"":`<div class="note">Per-device traffic is off — ${esc(cap.capture_reason||"")} Run <b>sudo python app.py</b> for live traffic + domain detail. Discovery & presence work regardless.</div>`;
+  document.getElementById('capNote').innerHTML=cap.capture?"":`<div class="note">Per-device traffic is off — ${esc(cap.capture_reason||"")} Run <b>${esc(runElevated)}</b> for live traffic + domain detail. Discovery & presence work regardless.</div>`;
 
   const traf={};(tr.devices||[]).forEach(d=>traf[d.ip]=d);
   ipName={};(dv.devices||[]).forEach(x=>ipName[x.ip]=x.display_name);
@@ -312,14 +314,14 @@ function render(s){
   // domains
   const dom=(s.domains&&s.domains.top)||[];
   document.getElementById('domCount').textContent=dom.length;
-  document.getElementById('domNote').innerHTML=cap.dns?"":`<div class="note">Domain mapping needs DNS capture — run <b>sudo python app.py</b>.</div>`;
+  document.getElementById('domNote').innerHTML=cap.dns?"":`<div class="note">Domain mapping needs DNS capture — run <b>${esc(runElevated)}</b>.</div>`;
   bars(document.getElementById('domBody'),dom.map(d=>({k:d.domain,v:d.bytes})),"var(--rx)",tot);
   bars(document.getElementById('destBody'),(tr.top_destinations||[]).map(d=>({k:d.endpoint,title:d.ip,v:d.bytes})),"var(--sky)",tot);
 
   // dns
   const d=s.dns||{};
   document.getElementById('dnsTotal').textContent=d.total||0;
-  document.getElementById('dnsState').innerHTML=d.available?"":`<div class="note">DNS capture off — run <b>sudo python app.py</b> to log every query by device.</div>`;
+  document.getElementById('dnsState').innerHTML=d.available?"":`<div class="note">DNS capture off — run <b>${esc(runElevated)}</b> to log every query by device.</div>`;
   document.getElementById('dnsFeed').innerHTML=(d.events||[]).map(e=>`<div class="dnsline ${e.blocked?'blk':''}">
     <span class="ts">${hhmm(e.t)}</span><span class="qt">${esc(e.qtype)}</span>
     <span class="cl" title="${esc(e.client)}">${esc(ipName[e.client]||e.client||"")}</span>
@@ -333,13 +335,15 @@ function render(s){
   const sh=s.sinkhole||{};
   document.getElementById('shState').textContent=sh.status||"";
   document.getElementById('shNote').innerHTML=sh.enabled&&sh.status==="active"
-    ? `<div class="note">Sinkhole active via ${esc(sh.upstream)} · served ${sh.served} queries. Point your router's DHCP DNS at this Mac to enforce blocks network-wide.</div>`
-    : `<div class="note">Blocklist is tracked and queries to blocked domains are flagged. To <b>enforce</b> blocking network-wide, enable the sinkhole in config.json (needs <b>pip install dnslib</b> + sudo) and set your router's DNS to this Mac.</div>`;
+    ? `<div class="note">Sinkhole active via ${esc(sh.upstream)} · served ${sh.served} queries. Point your router's DHCP DNS at this machine to enforce blocks network-wide.</div>`
+    : `<div class="note">Blocklist is tracked and queries to blocked domains are flagged. To <b>enforce</b> blocking network-wide, enable the sinkhole in config.json (needs <b>pip install dnslib</b> + ${esc(h.elevate_hint||"sudo")}) and set your router's DNS to this machine.</div>`;
   bars(document.getElementById('blkDomains'),(s.blocklist||[]).map(x=>({k:x,v:1})),"var(--dns)",()=>"",(dom)=>post('/api/unblock/domain',{domain:dom}));
 
   // firewall: pf (macOS) / netsh (Windows)
   const fw=s.firewall||{};
   const fwHint=fw.hint||"sudo";
+  const fwLabel=fw.backend==="netsh"?"Windows Firewall":(fw.backend==="pf"?"pf":"firewall");
+  document.getElementById('fwBackend').textContent=fwLabel;
   document.getElementById('pfState').textContent=fw.active?"active":(fw.enabled?"enabled":"disabled");
   document.getElementById('pfNote').innerHTML=fw.active
     ? `<div class="note">${esc(fw.note)}</div>`
