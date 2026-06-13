@@ -355,12 +355,16 @@ class DeviceTracker:
             return dev["hostname"]
         if dev.get("vendor"):
             return f"{dev['vendor']} device"
-        # No name/hostname/vendor yet: identify by the MAC tail rather than
-        # a useless "Unknown device".
+        # No name/hostname/vendor: identify by the MAC tail rather than a
+        # useless "Unknown device". Randomized/private MACs (phones, privacy
+        # mode) can't have a vendor by design, so label them as such.
         mac = (dev.get("mac") or "").replace(":", "")
         if len(mac) >= 6:
             tail = mac[-6:]
-            return f"Device {tail[0:2]}:{tail[2:4]}:{tail[4:6]}"
+            label = f"{tail[0:2]}:{tail[2:4]}:{tail[4:6]}"
+            if dev.get("random_mac"):
+                return f"Private device ({label})"
+            return f"Device {label}"
         return f"Device {dev.get('ip') or '?'}"
 
     def snapshot(self):

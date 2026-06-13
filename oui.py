@@ -1,12 +1,19 @@
 """MAC address -> vendor lookup.
 
 Ships with a compact built-in table of common home-network vendors so it works
-fully offline. If you drop a standard IEEE `oui.txt` or Wireshark `manuf` file
-next to this module, it will be loaded too for full coverage.
+fully offline. For full coverage it also:
+  * loads a standard IEEE `oui.txt` or Wireshark `manuf` file dropped next to
+    this module, and
+  * auto-downloads the Wireshark `manuf` database once (cached in ~/.netscope)
+    so most real-world devices resolve to a real vendor name.
+The built-in curated names always take precedence over the downloaded table.
 """
 
 import os
 import re
+import threading
+import time
+import urllib.request
 
 # First 3 octets (uppercase hex, no separators) -> vendor label.
 BUILTIN = {
@@ -99,6 +106,56 @@ def _load_full_files():
 _load_full_files()
 
 
+# ---- full vendor DB: cached Wireshark `manuf`, auto-downloaded once ----
+_STATE_DIR = os.path.expanduser("~/.netscope")
+_MANUF_CACHE = os.path.join(_STATE_DIR, "manuf")
+_MANUF_URL = "https://www.wireshark.org/download/automated/data/manuf"
+_MANUF_MAX_AGE = 30 * 86400        # refresh monthly
+
+
+def _load_manuf(path):
+    """Load a Wireshark manuf file (built-in names keep priority)."""
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = re.split(r"\s+", line, maxsplit=2)
+                if len(parts) < 2:
+                    continue
+                mac = re.sub(r"[^0-9A-Fa-f]", "", parts[0].split("/")[0])
+                if len(mac) >= 6 and parts[1]:
+                    _full.setdefault(mac[:6].upper(), parts[1])
+    except Exception:
+        pass
+
+
+def _fetch_manuf_bg():
+    """Download + cache the manuf DB if missing/stale, then (re)load it."""
+    try:
+        os.makedirs(_STATE_DIR, exist_ok=True)
+        fresh = (os.path.exists(_MANUF_CACHE) and
+                 time.time() - os.path.getmtime(_MANUF_CACHE) < _MANUF_MAX_AGE)
+        if not fresh:
+            req = urllib.request.Request(_MANUF_URL,
+                                         headers={"User-Agent": "HomeScope"})
+            data = urllib.request.urlopen(req, timeout=20).read()
+            tmp = _MANUF_CACHE + ".tmp"
+            with open(tmp, "wb") as fh:
+                fh.write(data)
+            os.replace(tmp, _MANUF_CACHE)
+        _load_manuf(_MANUF_CACHE)
+    except Exception:
+        pass
+
+
+# load any cached copy immediately, then refresh in the background
+if os.path.exists(_MANUF_CACHE):
+    _load_manuf(_MANUF_CACHE)
+threading.Thread(target=_fetch_manuf_bg, daemon=True).start()
+
+
 def normalize(mac):
     if not mac:
         return None
@@ -111,7 +168,9 @@ def lookup(mac):
     if not h:
         return None
     prefix = h[:6]
-    return _full.get(prefix) or BUILTIN.get(prefix)
+    # Curated built-in names win (cleaner labels + keep guess_kind matching);
+    # the downloaded full DB covers the long tail.
+    return BUILTIN.get(prefix) or _full.get(prefix)
 
 
 def is_locally_administered(mac):
