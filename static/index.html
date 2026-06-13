@@ -242,15 +242,18 @@ async function openDevice(ip){openIp=ip;overlay.classList.add('open');drawer.cla
   const r=await fetch('/api/device/'+ip);const d=await r.json();renderDrawer(d);}
 function renderDrawer(d){
   const id=d.identity||{},det=d.detail||{};
+  const fwb=(last&&last.firewall&&last.firewall.backend)||'';
+  const fwName=fwb==='netsh'?'Windows Firewall':(fwb==='pf'?'pf':'firewall');
   drawer.innerHTML=`<div class="dh"><span class="ico">${icon(id.kind)}</span>
     <div><h3>${esc(id.display_name||det.ip)}</h3></div><span class="close" id="dClose">✕</span></div>
     <div class="meta">${esc(det.ip)} · ${esc(id.mac||'')} · ${esc(id.vendor||'unknown')} · ${esc(id.kind||'')}
       ${id.online?'· <span style="color:var(--good)">online</span>':'· offline'}</div>
-    <button class="act" id="dBlockIp">block this IP (pf)</button>
+    <button class="act" id="dBlockIp">block this IP (${esc(fwName)})</button>
     <h4>Live traffic</h4><div class="scope-mini"><canvas id="dChart"></canvas></div>
     <div class="meta">session ↓ ${tot(det.rx||0)} · ↑ ${tot(det.tx||0)}</div>
     <h4>Top destinations</h4><div id="dDest"></div>
     <h4>Domains contacted</h4><div id="dDom"></div>
+    <div id="dScopeNote"></div>
     <h4>Protocol mix</h4><div id="dProto"></div>
     <h4>Active connections</h4>
     <div class="scrollable" style="max-height:200px"><table><thead><tr><th>proto</th><th>endpoint</th><th class="num">port</th><th class="num">bytes</th></tr></thead>
@@ -259,6 +262,12 @@ function renderDrawer(d){
   document.getElementById('dBlockIp').onclick=async()=>{const r=await post('/api/block/ip',{ip:det.ip});if(!r.ok)alert('Block failed: '+(r.error||'enable firewall in config.json'));};
   bars(document.getElementById('dDest'),(det.destinations||[]).map(x=>({k:x.endpoint,title:x.ip,v:x.bytes})),"var(--sky)",tot);
   bars(document.getElementById('dDom'),(det.domains||[]).map(x=>({k:x.domain,v:x.queries})),"var(--rx)",v=>v+" q");
+  const hasRemote=(det.destinations||[]).length>0||(det.domains||[]).length>0;
+  const sawTraffic=((det.rx||0)+(det.tx||0))>0;
+  const sn=document.getElementById('dScopeNote');
+  if(sn) sn.innerHTML=(!hasRemote&&sawTraffic)
+    ? `<div class="note">Only broadcast/multicast (ARP, mDNS, ICMP, SSDP) is visible from this device. On a switched network this machine can't see other devices' unicast (web) traffic, so destinations and domains stay empty. For per-device domains network-wide, enable the DNS sinkhole and point your router's DHCP DNS at this machine — or run HomeScope on the gateway / a mirror port.</div>`
+    : '';
   bars(document.getElementById('dProto'),(det.protocols||[]).map(p=>({k:p[0],v:p[1]})),"var(--vio)",tot);
   const c=document.getElementById('dChart').getContext('2d');
   const tl=det.timeline||[];
