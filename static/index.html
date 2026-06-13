@@ -337,12 +337,13 @@ function render(s){
     : `<div class="note">Blocklist is tracked and queries to blocked domains are flagged. To <b>enforce</b> blocking network-wide, enable the sinkhole in config.json (needs <b>pip install dnslib</b> + sudo) and set your router's DNS to this Mac.</div>`;
   bars(document.getElementById('blkDomains'),(s.blocklist||[]).map(x=>({k:x,v:1})),"var(--dns)",()=>"",(dom)=>post('/api/unblock/domain',{domain:dom}));
 
-  // firewall: pf
+  // firewall: pf (macOS) / netsh (Windows)
   const fw=s.firewall||{};
+  const fwHint=fw.hint||"sudo";
   document.getElementById('pfState').textContent=fw.active?"active":(fw.enabled?"enabled":"disabled");
   document.getElementById('pfNote').innerHTML=fw.active
     ? `<div class="note">${esc(fw.note)}</div>`
-    : `<div class="note">pf blocking is ${fw.enabled?'enabled but needs root':'disabled'}. Set <b>"firewall":{"enabled":true}</b> in config.json and run with <b>sudo</b>. ${esc(fw.note||'')}</div>`;
+    : `<div class="note">IP blocking is ${fw.enabled?`enabled but needs privileges (${esc(fwHint)})`:'disabled'}. Set <b>"firewall":{"enabled":true}</b> in config.json and ${esc(fwHint)}. ${esc(fw.error||fw.note||'')}</div>`;
   bars(document.getElementById('blkIps'),(fw.blocked_ips||[]).map(x=>({k:x,v:1})),"var(--warn)",()=>"",(ip)=>post('/api/unblock/ip',{ip}));
 
   // alerts

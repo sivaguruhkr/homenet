@@ -25,6 +25,8 @@ import subprocess
 import threading
 import time
 
+import sysutil
+
 OID_IFDESCR = "1.3.6.1.2.1.2.2.1.2"
 OID_IN_HC = "1.3.6.1.2.1.31.1.1.1.6"      # ifHCInOctets (64-bit)
 OID_OUT_HC = "1.3.6.1.2.1.31.1.1.1.10"    # ifHCOutOctets
@@ -59,7 +61,8 @@ class SNMPPoller:
         cmd = ["snmpwalk", f"-v{self.version}", "-c", self.community,
                "-Oqn", "-t", "2", "-r", "1", self.host, oid]
         try:
-            out = subprocess.run(cmd, capture_output=True, text=True, timeout=10).stdout
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=10,
+                                 **sysutil.no_window_kwargs()).stdout
         except Exception:
             return {}
         res = {}

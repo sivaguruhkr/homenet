@@ -35,11 +35,12 @@ import resolver as resolver_mod
 import firewall as firewall_mod
 import alerts as alerts_mod
 import snmp as snmp_mod
+import sysutil
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 HOST = os.environ.get("HOMESCOPE_HOST", "127.0.0.1")
 PORT = int(os.environ.get("HOMESCOPE_PORT", "8788"))
-IS_ROOT = (hasattr(os, "geteuid") and os.geteuid() == 0)
+IS_ROOT = sysutil.is_admin()
 
 
 def load_config():
@@ -83,7 +84,7 @@ intel = resolver_mod.DomainIntel()
 dnswatch = resolver_mod.DNSWatch(intel, blocklist)
 sinkhole = resolver_mod.Sinkhole(blocklist, CONFIG.get("sinkhole"), dnswatch)
 cap = capture.CaptureEngine(tracker, intel)
-firewall = firewall_mod.PFFirewall(CONFIG.get("firewall"))
+firewall = firewall_mod.make_firewall(CONFIG.get("firewall"))
 alerts = alerts_mod.AlertEngine(CONFIG.get("alerts"))
 snmp = snmp_mod.SNMPPoller(CONFIG.get("snmp"))
 localbw = LocalBandwidth()
@@ -255,12 +256,16 @@ def main():
     print("=" * 66)
     print("  HomeScope — whole-home network monitor (extended)")
     print(f"  Dashboard:   http://{HOST}:{PORT}")
-    print(f"  Privileges:  {'root (full)' if IS_ROOT else 'user (discovery+presence)'}")
+    admin_label = "admin (full)" if sysutil.IS_WINDOWS else "root (full)"
+    print(f"  Privileges:  {admin_label if IS_ROOT else 'user (discovery+presence)'}")
     print(f"  Capture:     {cap.reason}")
     print(f"  DNS watch:   {dnswatch.reason}")
     print(f"  mDNS:        {'on' if tracker.mdns.ok else 'off (pip install zeroconf)'}")
     print(f"  Sinkhole:    {sinkhole.status}")
-    print(f"  pf firewall: {'active' if firewall.status()['active'] else firewall.status()['enabled'] and 'enabled (need root)' or 'disabled'}")
+    fw_st = firewall.status()
+    fw_line = ('active' if fw_st['active']
+               else fw_st['enabled'] and f"enabled (need {sysutil.admin_hint()})" or 'disabled')
+    print(f"  Firewall:    {fw_line}")
     print(f"  SNMP:        {snmp.status}")
     print("=" * 66)
     tracker.start(); cap.start(); dnswatch.start(); sinkhole.start(); snmp.start()

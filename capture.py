@@ -14,11 +14,12 @@ reports how many devices are actually seen on the wire.
 
 import ipaddress
 import re
-import shutil
 import subprocess
 import threading
 import time
 from collections import defaultdict, deque, Counter
+
+import sysutil
 
 LINE_RE = re.compile(
     r"^(?P<ts>\d+\.\d+)\s+"
@@ -68,7 +69,8 @@ class CaptureEngine:
     def __init__(self, tracker, intel=None):
         self.tracker = tracker
         self.intel = intel
-        self.available = shutil.which("tcpdump") is not None
+        self.tool = sysutil.capture_tool()
+        self.available = self.tool is not None
         self.reason = self._reason()
         self.counters = defaultdict(DeviceCounters)
         self.lock = threading.Lock()
@@ -79,11 +81,11 @@ class CaptureEngine:
         self.global_dests = Counter()
 
     def _reason(self):
-        import os
-        if not shutil.which("tcpdump"):
-            return "tcpdump not found."
-        if hasattr(os, "geteuid") and os.geteuid() != 0:
-            return "Run with sudo to capture per-device traffic."
+        if not self.tool:
+            return ("tcpdump not found." if not sysutil.IS_WINDOWS
+                    else "WinDump/tcpdump not found (install Npcap + WinDump).")
+        if not sysutil.is_admin():
+            return f"{sysutil.admin_hint().capitalize()} to capture per-device traffic."
         return "active"
 
     def _iface(self):
@@ -100,15 +102,14 @@ class CaptureEngine:
             return False
 
     def start(self):
-        import os
-        if not self.available or (hasattr(os, "geteuid") and os.geteuid() != 0):
+        if not self.available or not sysutil.is_admin():
             return
         threading.Thread(target=self._run, daemon=True).start()
         threading.Thread(target=self._rate_loop, daemon=True).start()
 
     def _run(self):
         iface = self._iface()
-        cmd = ["tcpdump", "-n", "-e", "-tt", "-l", "-q"]
+        cmd = [self.tool, "-n", "-e", "-tt", "-l", "-q"]
         if iface:
             cmd += ["-i", iface]
         cmd += ["ip", "or", "ip6", "or", "arp"]
@@ -116,7 +117,7 @@ class CaptureEngine:
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
                                     stderr=subprocess.DEVNULL, text=True, bufsize=1)
         except Exception as e:
-            self.reason = f"tcpdump failed: {e}"
+            self.reason = f"{self.tool} failed: {e}"
             self.available = False
             return
         for line in proc.stdout:

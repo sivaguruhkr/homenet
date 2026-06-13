@@ -26,8 +26,9 @@ from concurrent.futures import ThreadPoolExecutor
 import psutil
 
 import oui
+import sysutil
 
-IS_MACOS = sys.platform == "darwin"
+IS_MACOS = sysutil.IS_MACOS
 STATE_DIR = os.path.expanduser("~/.netscope")
 STATE_FILE = os.path.join(STATE_DIR, "devices.json")
 ONLINE_WINDOW = 90          # seconds since last_seen to count as "online"
@@ -54,7 +55,8 @@ MDNS_KIND = {
 
 def _run(cmd, timeout=8):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout,
+                              **sysutil.no_window_kwargs()).stdout
     except Exception:
         return ""
 
@@ -80,28 +82,35 @@ def local_networks():
 
 
 def read_arp_table():
-    """Return dict ip -> mac from the OS ARP cache."""
+    """Return dict ip -> mac from the OS ARP cache.
+
+    Handles both POSIX (`arp -an` / `ip neigh`, colon-separated MACs) and
+    Windows (`arp -a`, dash-separated MACs). Broadcast/multicast pseudo-entries
+    are skipped so they don't show up as phantom devices.
+    """
     out = {}
-    text = _run(["arp", "-an"]) or _run(["ip", "neigh"])
+    text = _run(sysutil.arp_table_cmd()) or _run(["ip", "neigh"])
     for line in text.splitlines():
         ipm = re.search(r"\(?(\d{1,3}(?:\.\d{1,3}){3})\)?", line)
-        macm = re.search(r"([0-9a-fA-F]{1,2}(?::[0-9a-fA-F]{1,2}){5})", line)
+        # MAC with either ':' (POSIX) or '-' (Windows) separators
+        macm = re.search(r"([0-9a-fA-F]{1,2}(?:[:-][0-9a-fA-F]{1,2}){5})", line)
         if ipm and macm:
-            mac = ":".join(f"{int(x,16):02x}" for x in macm.group(1).split(":"))
+            octets = re.split(r"[:-]", macm.group(1))
+            mac = ":".join(f"{int(x, 16):02x}" for x in octets)
+            if mac in ("ff:ff:ff:ff:ff:ff", "00:00:00:00:00:00"):
+                continue
+            if mac.startswith(("01:00:5e", "33:33")):   # IPv4/IPv6 multicast
+                continue
             out[ipm.group(1)] = mac.lower()
     return out
 
 
 def ping_sweep(net, workers=128):
     """Ping every host to populate the ARP cache. Best-effort, ignores failures."""
-    if IS_MACOS:
-        args = lambda ip: ["ping", "-c", "1", "-t", "1", "-W", "300", ip]
-    else:
-        args = lambda ip: ["ping", "-c", "1", "-W", "1", ip]
-
     def ping(ip):
         try:
-            subprocess.run(args(str(ip)), capture_output=True, timeout=2)
+            subprocess.run(sysutil.ping_args(ip), capture_output=True, timeout=2,
+                           **sysutil.no_window_kwargs())
         except Exception:
             pass
 

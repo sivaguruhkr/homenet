@@ -16,12 +16,13 @@ Pieces:
 import json
 import os
 import re
-import shutil
 import socket
 import subprocess
 import threading
 import time
 from collections import Counter, defaultdict, deque
+
+import sysutil
 
 STATE_DIR = os.path.expanduser("~/.netscope")
 BLOCK_FILE = os.path.join(STATE_DIR, "blocked_domains.json")
@@ -150,7 +151,8 @@ class DNSWatch:
     def __init__(self, intel, blocklist, history=300):
         self.intel = intel
         self.blocklist = blocklist
-        self.available = shutil.which("tcpdump") is not None
+        self.tool = sysutil.capture_tool()
+        self.available = self.tool is not None
         self.reason = self._reason()
         self.events = deque(maxlen=history)
         self.qtypes = Counter()
@@ -161,14 +163,15 @@ class DNSWatch:
         self.total = 0
 
     def _reason(self):
-        if not shutil.which("tcpdump"):
-            return "tcpdump missing"
-        if hasattr(os, "geteuid") and os.geteuid() != 0:
-            return "run with sudo for DNS capture"
+        if not self.tool:
+            return ("tcpdump missing" if not sysutil.IS_WINDOWS
+                    else "WinDump/tcpdump missing (install Npcap + WinDump)")
+        if not sysutil.is_admin():
+            return f"{sysutil.admin_hint()} for DNS capture"
         return "active"
 
     def start(self):
-        if not self.available or (hasattr(os, "geteuid") and os.geteuid() != 0):
+        if not self.available or not sysutil.is_admin():
             return
         threading.Thread(target=self._run, daemon=True).start()
 
@@ -176,7 +179,7 @@ class DNSWatch:
         import discovery
         nets = discovery.local_networks()
         iface = nets[0][0] if nets else None
-        cmd = ["tcpdump", "-l", "-n", "-tt"]
+        cmd = [self.tool, "-l", "-n", "-tt"]
         if iface:
             cmd += ["-i", iface]
         cmd += ["port", "53"]
@@ -185,7 +188,7 @@ class DNSWatch:
                                     stderr=subprocess.DEVNULL, text=True, bufsize=1)
         except Exception as e:
             self.available = False
-            self.reason = f"tcpdump failed: {e}"
+            self.reason = f"{self.tool} failed: {e}"
             return
         for line in proc.stdout:
             try:
@@ -273,8 +276,8 @@ class Sinkhole:
             return "disabled"
         if not self.have_lib:
             return "needs: pip install dnslib"
-        if hasattr(os, "geteuid") and os.geteuid() != 0 and self.port < 1024:
-            return "run with sudo to bind port 53"
+        if not sysutil.is_admin() and self.port < 1024:
+            return f"{sysutil.admin_hint()} to bind port {self.port}"
         return "active"
 
     def start(self):
