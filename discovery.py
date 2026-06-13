@@ -349,8 +349,19 @@ class DeviceTracker:
         self.scan_count += 1
 
     def display_name(self, dev):
-        return (dev.get("name") or dev.get("hostname")
-                or f"{dev.get('vendor') or 'Unknown'} device")
+        if dev.get("name"):
+            return dev["name"]
+        if dev.get("hostname"):
+            return dev["hostname"]
+        if dev.get("vendor"):
+            return f"{dev['vendor']} device"
+        # No name/hostname/vendor yet: identify by the MAC tail rather than
+        # a useless "Unknown device".
+        mac = (dev.get("mac") or "").replace(":", "")
+        if len(mac) >= 6:
+            tail = mac[-6:]
+            return f"Device {tail[0:2]}:{tail[2:4]}:{tail[4:6]}"
+        return f"Device {dev.get('ip') or '?'}"
 
     def snapshot(self):
         now = time.time()

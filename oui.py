@@ -57,6 +57,11 @@ BUILTIN = {
     # Dyson, Wyze, Tuya, Shelly (popular smart home)
     "D073D5": "LIFX", "2CAA8E": "Wyze", "A0E6F8": "TUYA/Smart",
     "B0B21C": "Shelly", "98CDAC": "Espressif/IoT",
+    # Virtualization / VM platforms (common in dev/test setups)
+    "001C42": "Parallels VM", "080027": "VirtualBox VM", "0A0027": "VirtualBox VM",
+    "00155D": "Hyper-V VM", "525400": "QEMU/KVM VM", "00163E": "Xen VM",
+    "000569": "VMware", "000C29": "VMware", "001C14": "VMware", "005056": "VMware",
+    "0050F2": "Microsoft", "024286": "Docker",
 }
 
 _full = {}
